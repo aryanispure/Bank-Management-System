@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sahyadri Bank</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,700&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef1ee;--surface:#fff;--ink:#14231f;--muted:#5d6b66;--line:#d9dfdb;--brand:#0d4a3f;--brand-ink:#fff;--accent:#e0a526;--bad:#b3261e;--good:#17744a;
+--serif:'Newsreader',Georgia,serif;--sans:'Hanken Grotesk',system-ui,sans-serif}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1714;--surface:#16231f;--ink:#e8efec;--muted:#93a39d;--line:#2a3a35;--brand:#2fa58f;--brand-ink:#06150f;--accent:#e8b94a;--bad:#ff8a80;--good:#5fd39b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 var(--sans)}
+h1,h2,h3{font-family:var(--serif);margin:0;font-weight:700}
+.wrap{max-width:980px;margin:0 auto;padding:20px}
+button,input,select{font:inherit}
+input,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink)}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+label{display:block;font-size:14px;font-weight:500;margin:12px 0 4px}
+.hint{font-size:13px;color:var(--muted);margin-top:3px}
+.btn{background:var(--brand);color:var(--brand-ink);border:0;border-radius:6px;padding:11px 18px;font-weight:600;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn.danger{background:var(--bad);color:#fff}
+.btn:disabled{opacity:.6;cursor:wait}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:22px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+@media(max-width:640px){.grid2{grid-template-columns:1fr}}
+/* auth */
+.auth{display:grid;grid-template-columns:1fr 1.1fr;gap:28px;align-items:start;padding-top:6vh}
+@media(max-width:800px){.auth{grid-template-columns:1fr}}
+.pitch h1{font-size:clamp(36px,6vw,56px);line-height:1.05;color:var(--brand)}
+.pitch p{color:var(--muted);max-width:34ch}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:8px;overflow-x:auto}
+.tab{background:none;border:0;padding:10px 14px;cursor:pointer;color:var(--muted);border-bottom:3px solid transparent;font-weight:500;white-space:nowrap}
+.tab[aria-selected=true]{color:var(--ink);border-color:var(--accent)}
+/* app */
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
+header h2{font-size:24px;color:var(--brand)}
+.balance{background:var(--brand);color:var(--brand-ink);border-radius:10px;padding:26px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px}
+.balance .amt{font-family:var(--serif);font-size:clamp(38px,8vw,60px);line-height:1}
+.balance small{opacity:.8;display:block}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th{text-align:left;font-weight:600;color:var(--muted);font-size:13px;padding:8px 6px;border-bottom:1px solid var(--line)}
+td{padding:10px 6px;border-bottom:1px solid var(--line)}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.in{color:var(--good)}.out{color:var(--bad)}
+.scroll{overflow-x:auto}
+.empty{color:var(--muted);padding:24px 0;text-align:center}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);padding:12px 18px;border-radius:8px;color:#fff;background:var(--good);max-width:90vw;display:none;z-index:9}
+#toast.err{background:var(--bad)}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:0}dt{color:var(--muted)}dd{margin:0}
+.danger-zone{border-color:var(--bad);margin-top:18px}
+@media(prefers-reduced-motion:no-preference){#toast{transition:opacity .2s}}
+</style>
+</head>
+<body>
+<div class="wrap" id="root"></div>
+<div id="toast" role="status"></div>
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+let token = sessionStorage.getItem('tok'), me = null, tab = 'deposit', authTab = 'login';
+
+// ----- form definitions: one place describes every form -----
+const F = (key, label, type = 'text', extra = {}) => ({ key, label, type, ...extra });
+const FORMS = {
+  login: { title: 'Log in', btn: 'Log in', url: '/api/login', fields: [F('username', 'Username'), F('password', 'Password', 'password')] },
+  register: { title: 'Open an account', btn: 'Create account', url: '/api/register', fields: [
+    F('name', 'Full name'), F('mobile', 'Mobile number', 'tel', { hint: '10 digits' }), F('email', 'Email', 'email'),
+    F('dob', 'Date of birth', 'date'), F('gender', 'Gender', 'select', { opts: ['Male', 'Female', 'Other'] }), F('address', 'City / address'),
+    F('username', 'Username'), F('password', 'Password', 'password', { hint: 'At least 8 characters' }),
+    F('secureWord', 'Secure word', 'password', { hint: 'Asked for other-bank transfers and account closure' }),
+    F('limit', 'Per-transaction limit (₹)', 'number', { value: 25000 }), F('initialDeposit', 'Opening deposit (₹)', 'number', { value: 0 })] },
+  deposit: { tab: 'Deposit', url: '/api/deposit', btn: 'Deposit', fields: [F('amount', 'Amount (₹)', 'number')] },
+  withdraw: { tab: 'Withdraw', url: '/api/withdraw', btn: 'Withdraw', fields: [F('amount', 'Amount (₹)', 'number')] },
+  transfer: { tab: 'Send to account', url: '/api/transfer', btn: 'Send money', fields: [F('receiver', 'Receiver account number', 'number', { hint: 'An account in this bank' }), F('amount', 'Amount (₹)', 'number')] },
+  external: { tab: 'Send to other bank', url: '/api/transfer-external', btn: 'Send to other bank', fields: [
+    F('receiverName', 'Receiver name'), F('bankName', 'Bank name'), F('ifsc', 'IFSC code', 'text', { hint: 'Example: HDFC0001234' }),
+    F('accountNo', 'Receiver account number', 'text'), F('amount', 'Amount (₹)', 'number'), F('secureWord', 'Your secure word', 'password')] },
+  bill: { tab: 'Pay a bill', url: '/api/pay-bill', btn: 'Pay bill', fields: [
+    F('type', 'Bill type', 'select', { opts: ['Electricity', 'Mobile Recharge', 'Internet', 'Water', 'Gas', 'Other'] }), F('biller', 'Biller name'), F('amount', 'Amount (₹)', 'number')] },
+};
+const TABS = ['deposit', 'withdraw', 'transfer', 'external', 'bill'];
+
+function formHTML(id) {
+  const f = FORMS[id];
+  return `<form data-form="${id}" novalidate>${f.title ? `<h3>${f.title}</h3>` : ''}<div class="${f.fields.length > 3 ? 'grid2' : ''}">` +
+    f.fields.map(x => `<div><label for="${id}-${x.key}">${x.label}</label>` +
+      (x.type === 'select'
+        ? `<select id="${id}-${x.key}" name="${x.key}">${x.opts.map(o => `<option>${o}</option>`).join('')}</select>`
+        : `<input id="${id}-${x.key}" name="${x.key}" type="${x.type}" ${x.type === 'number' ? 'min="0" step="0.01" inputmode="decimal"' : ''} value="${x.value ?? ''}" autocomplete="off">`) +
+      (x.hint ? `<div class="hint">${x.hint}</div>` : '') + `</div>`).join('') +
+    `</div><p><button class="btn" type="submit">${f.btn}</button></p></form>`;
+}
+
+// ----- api -----
+async function api(url, method = 'GET', body) {
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const d = await r.json().catch(() => ({}));
+  if (r.status === 401 && token) { logoutLocal(); toast(d.error, true); throw 0; }
+  if (!r.ok) throw new Error(d.error || 'Request failed');
+  return d;
+}
+let tt; function toast(m, bad) { const t = $('#toast'); t.textContent = m; t.className = bad ? 'err' : ''; t.style.display = 'block'; clearTimeout(tt); tt = setTimeout(() => t.style.display = 'none', 4500); }
+const inr = n => '₹' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ----- submit handling for every form -----
+document.addEventListener('submit', async e => {
+  e.preventDefault();
+  const form = e.target, id = form.dataset.form, btn = $('button[type=submit]', form);
+  const body = Object.fromEntries(new FormData(form));
+  btn.disabled = true;
+  try {
+    if (id === 'login') { token = (await api('/api/login', 'POST', body)).token; sessionStorage.setItem('tok', token); await load(); }
+    else if (id === 'register') {
+      const d = await api('/api/register', 'POST', body); authTab = 'login'; renderAuth();
+      toast(`Account created. Your account number is ${d.accountId}. Log in to continue.`);
+    }
+    else if (id === 'limit' || id === 'password' || id === 'profile' || id === 'close') await settingsSubmit(id, body);
+    else { const d = await api(FORMS[id].url, 'POST', body); toast(d.message); form.reset(); await load(); }
+  } catch (err) { if (err) toast(err.message, true); }
+  btn.disabled = false;
+});
+
+async function settingsSubmit(id, b) {
+  if (id === 'close') {
+    if (!confirm('Close this account permanently? This deletes your profile and history and cannot be undone.')) return;
+    await api('/api/account', 'DELETE', b); logoutLocal(); toast('Your account has been closed.'); return;
+  }
+  const map = { limit: ['/api/limit', 'PUT'], password: ['/api/password', 'PUT'], profile: ['/api/profile', 'PUT'] };
+  const d = await api(map[id][0], map[id][1], b); toast(d.message); await load();
+}
+
+// ----- views -----
+function renderAuth() {
+  $('#root').innerHTML = `<div class="auth"><div class="pitch"><h1>Sahyadri Bank</h1><p>Open an account in a minute, move money between accounts or to any other bank, and pay your bills.</p></div>
+  <div class="panel"><div class="tabs" role="tablist">${['login', 'register'].map(t => `<button class="tab" role="tab" aria-selected="${t === authTab}" data-auth="${t}">${t === 'login' ? 'Log in' : 'Open an account'}</button>`).join('')}</div>${formHTML(authTab)}</div></div>`;
+}
+function logoutLocal() { token = null; me = null; sessionStorage.removeItem('tok'); renderAuth(); }
+
+async function load() {
+  const [m, tx, pay, ext] = await Promise.all([api('/api/me'), api('/api/transactions'), api('/api/payments'), api('/api/external-transfers')]);
+  me = m; renderApp(tx, pay, ext);
+}
+
+function renderApp(txs, pays, exts) {
+  const active = FORMS[tab] ? tab : 'deposit';
+  $('#root').innerHTML = `
+  <header><h2>Sahyadri Bank</h2><div><span>${esc(me.Customer_Name)}</span> <button class="btn ghost" id="logout">Log out</button></div></header>
+  <section class="balance"><div><small>Available balance</small><div class="amt">${inr(me.Account_Amount)}</div></div>
+    <div><small>Account number</small><strong>${me.Account_ID}</strong><small style="margin-top:8px">Limit per transaction</small><strong>${inr(me.Transaction_Limit)}</strong></div></section>
+  <section class="panel"><div class="tabs" role="tablist">${[...TABS, 'history', 'bills', 'settings'].map(t =>
+      `<button class="tab" role="tab" aria-selected="${t === tab}" data-tab="${t}">${FORMS[t]?.tab || { history: 'History', bills: 'Bill payments', settings: 'Settings' }[t]}</button>`).join('')}</div>
+    <div id="view">${view(tab, txs, pays, exts)}</div></section>`;
+}
+
+function view(t, txs, pays, exts) {
+  if (FORMS[t] && TABS.includes(t)) return formHTML(t);
+  if (t === 'history') return txs.length ? `<div class="scroll"><table><thead><tr><th>Date</th><th>Type</th><th>Details</th><th class="num">Amount</th></tr></thead><tbody>${txs.map(x => {
+    const incoming = x.Transaction_Type === 'Deposit' || (x.Transaction_Type === 'Transfer' && x.Account_ID !== me.Account_ID);
+    const detail = x.Transaction_Type === 'Transfer' ? (incoming ? 'From ' + esc(x.Sender_Name) : 'To ' + esc(x.Receiver_Name) + (x.Receiver_Account ? ' (A/c ' + x.Receiver_Account + ')' : '')) : '';
+    return `<tr><td>${x.Date}</td><td>${incoming && x.Transaction_Type === 'Transfer' ? 'Received' : x.Transaction_Type}</td><td>${detail}</td><td class="num ${incoming ? 'in' : 'out'}">${incoming ? '+' : '−'}${inr(x.Amount)}</td></tr>`;
+  }).join('')}</tbody></table></div>` : `<p class="empty">No transactions yet. Make a deposit to get started.</p>`;
+  if (t === 'bills') return pays.length ? `<div class="scroll"><table><thead><tr><th>Biller</th><th>Type</th><th class="num">Amount</th></tr></thead><tbody>${pays.map(p => `<tr><td>${esc(p.Biller_Name)}</td><td>${esc(p.Payment_Type)}</td><td class="num out">−${inr(p.Payment_Amount)}</td></tr>`).join('')}</tbody></table></div>` : `<p class="empty">You haven't paid any bills yet.</p>`;
+  if (t === 'settings') return `
+    <h3 style="margin-top:14px">Your details</h3>
+    <dl style="margin:10px 0 4px"><dt>Username</dt><dd>${esc(me.Username)}</dd><dt>Date of birth</dt><dd>${me.DOB || '—'}</dd><dt>Relationship manager</dt><dd>${esc(me.Staff_Name || '—')} ${me.Staff_Mobile_No ? '(' + me.Staff_Mobile_No + ')' : ''}</dd></dl>
+    <form data-form="profile"><div class="grid2"><div><label>Mobile number</label><input name="mobile" value="${esc(me.Customer_Mobile_No)}"></div><div><label>Email</label><input name="email" value="${esc(me.Customer_Email)}"></div></div><label>Address</label><input name="address" value="${esc(me.Customer_Address)}"><p><button class="btn" type="submit">Save details</button></p></form>
+    <hr style="border:0;border-top:1px solid var(--line)">
+    <form data-form="limit"><h3>Transaction limit</h3><div class="grid2"><div><label>New limit (₹)</label><input name="limit" type="number" min="1"></div><div><label>Password</label><input name="password" type="password"></div></div><p><button class="btn" type="submit">Update limit</button></p></form>
+    <form data-form="password"><h3>Change password</h3><div class="grid2"><div><label>Current password</label><input name="oldPassword" type="password"></div><div><label>New password</label><input name="newPassword" type="password"></div></div><p><button class="btn" type="submit">Change password</button></p></form>
+    <form data-form="close" class="panel danger-zone"><h3>Close account</h3><p class="hint">Your balance must be ₹0. Closing deletes your profile, transactions and bill history.</p><div class="grid2"><div><label>Password</label><input name="password" type="password"></div><div><label>Secure word</label><input name="secureWord" type="password"></div></div><p><button class="btn danger" type="submit">Close my account</button></p></form>`;
+}
+
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-tab],[data-auth],#logout'); if (!t) return;
+  if (t.id === 'logout') { try { await api('/api/logout', 'POST'); } catch {} return logoutLocal(); }
+  if (t.dataset.auth) { authTab = t.dataset.auth; return renderAuth(); }
+  tab = t.dataset.tab; try { await load(); } catch {}
+});
+
+token ? load().catch(logoutLocal) : renderAuth();
+</script>
+</body>
+</html>
